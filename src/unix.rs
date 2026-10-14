@@ -150,6 +150,31 @@ pub fn allocate(file: &File, len: u64) -> Result<()> {
     }
 }
 
+#[cfg(target_os =  "macos")]
+pub fn statvfs(path: &Path) -> Result<FsStats> {
+    let cstr = match CString::new(path.as_os_str().as_bytes()) {
+        Ok(cstr) => cstr,
+        Err(..) => return Err(Error::new(ErrorKind::InvalidInput, "path contained a null")),
+    };
+
+    unsafe {
+        let mut stat: libc::statfs = mem::zeroed();
+        // danburkert/fs2-rs#1: cast is necessary for platforms where c_char != u8.
+        if libc::statfs(cstr.as_ptr() as *const _, &mut stat) != 0 {
+            Err(Error::last_os_error())
+        } else {
+            let block_size = stat.f_bsize as u64;
+            Ok(FsStats {
+                free_space: block_size * stat.f_bfree as u64,
+                available_space: block_size * stat.f_bavail as u64,
+                total_space: block_size * stat.f_blocks as u64,
+                allocation_granularity: block_size,
+            })
+        }
+    }
+}
+
+#[cfg(not(target_os =  "macos"))]
 pub fn statvfs(path: &Path) -> Result<FsStats> {
     let cstr = match CString::new(path.as_os_str().as_bytes()) {
         Ok(cstr) => cstr,
